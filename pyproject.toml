@@ -1,0 +1,14 @@
+[project]
+name = "ddl2pt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pyside6>=6.11.0",
+]
+
+[dependency-groups]
+dev = [
+    "nuitka==2.8.9",
+]
