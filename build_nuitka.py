@@ -86,16 +86,16 @@ PROJECT_META = _load_project_metadata()
 
 # 构建配置变量
 BUILD_CONFIG = {
-    "company_name": "@心福口福",
+    "company_name": "@ivyswen",
     "product_name": PROJECT_META["name"],
     "file_version": PROJECT_META["version"],
     "product_version": PROJECT_META["version"],
     "file_description": PROJECT_META["description"],
-    "copyright": "Copyright 2026 @心福口福",
+    "copyright": "Copyright 2026 @ivyswen",
     "main_script": "main.py",
     "output_dir": "build",
     "resources_dir": "Resources",
-    "windows_icon_png": "icon-192.png",  # 优先使用高分辨率 PNG 生成 exe 图标
+    "windows_icon_png": "icon-512.png",  # 优先使用高分辨率 PNG 生成 exe 图标
     "windows_icon_ico": "favicon.ico",   # PNG 处理失败时回退使用
     "executable_name": "DDL2PT",
     "dist_folder_name": "{executable_name}_v{product_version}",  # 重命名后的文件夹名称格式
@@ -176,7 +176,7 @@ def _prepare_windows_icon(resources_dir: str, output_dir: str) -> Optional[str]:
     2) 失败时回退到已有 ICO
     """
     resources_root = Path(resources_dir)
-    preferred_png = resources_root / str(BUILD_CONFIG.get("windows_icon_png", "icon-192.png"))
+    preferred_png = resources_root / str(BUILD_CONFIG.get("windows_icon_png", "icon-512.png"))
     fallback_ico = resources_root / str(BUILD_CONFIG.get("windows_icon_ico", "favicon.ico"))
 
     png_icon = preferred_png if preferred_png.exists() else _find_best_png_icon(resources_dir)
