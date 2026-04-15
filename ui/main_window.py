@@ -82,6 +82,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         # QSettings 用于持久化 UI 参数
         self._settings = QSettings(_ORG, _APP)
+        # 参数是否被改动（用于控制“解锁”二次确认是否弹窗）
+        self._params_dirty = False
 
         self.setWindowTitle("ALTER → pt-online-schema-change 转换工具")
         self.setMinimumSize(860, 700)
@@ -91,6 +93,9 @@ class MainWindow(QMainWindow):
         self._build_ui()
         # 从持久化读取上次参数
         self._load_settings()
+        # 绑定参数改动监听（放在 load 之后，避免初始化填充触发脏标记）
+        self._bind_params_dirty_tracking()
+        self._params_dirty = False
 
     # ─────────────────────────────────────────────────────────────────
     # UI 构建
@@ -117,11 +122,16 @@ class MainWindow(QMainWindow):
         params_layout.setContentsMargins(0, 0, 0, 0)
         params_layout.setSpacing(10)
 
+        self.grp_db = self._build_db_group()
+        self.grp_pt = self._build_pt_group()
+        self.grp_flags = self._build_flags_group()
+        self.grp_extra = self._build_extra_group()
+
         # 使用网格布局分栏排列：左列分布 db_group 和 flags_group，右侧分布 pt_group，底部跨两列为 extra_group
-        params_layout.addWidget(self._build_db_group(), 0, 0)
-        params_layout.addWidget(self._build_pt_group(), 0, 1, 2, 1)
-        params_layout.addWidget(self._build_flags_group(), 1, 0)
-        params_layout.addWidget(self._build_extra_group(), 2, 0, 1, 2)
+        params_layout.addWidget(self.grp_db, 0, 0)
+        params_layout.addWidget(self.grp_pt, 0, 1, 2, 1)
+        params_layout.addWidget(self.grp_flags, 1, 0)
+        params_layout.addWidget(self.grp_extra, 2, 0, 1, 2)
         
         # 将两列宽度均匀分布
         params_layout.setColumnStretch(0, 1)
@@ -401,6 +411,10 @@ class MainWindow(QMainWindow):
         self.btn_reset.setMinimumHeight(38)
         self.btn_reset.clicked.connect(self._on_reset)
 
+        self.chk_lock_params = QCheckBox("参数只读锁定")
+        self.chk_lock_params.setToolTip("锁定后参数面板不可编辑，防止误改；取消勾选可恢复编辑。")
+        self.chk_lock_params.stateChanged.connect(self._on_toggle_params_lock)
+
         # 去除按钮焦点框，避免点击后出现矩形高亮
         for btn in (self.btn_convert, self.btn_copy, self.btn_clear, self.btn_reset):
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -409,6 +423,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.btn_copy, stretch=1)
         layout.addWidget(self.btn_clear, stretch=1)
         layout.addWidget(self.btn_reset, stretch=1)
+        layout.addWidget(self.chk_lock_params)
         return bar
 
     # ── 输出区 ────────────────────────────────────────────────────────
@@ -441,6 +456,7 @@ class MainWindow(QMainWindow):
             self.output_text.setPlainText(cmd)
             # 转换成功后保存参数
             self._save_settings()
+            self._params_dirty = False
             self.status_bar.showMessage("转换成功 ✓  参数已自动保存")
         except ValueError as e:
             self.output_text.setPlainText(f"[错误] {e}")
@@ -484,9 +500,87 @@ class MainWindow(QMainWindow):
             self._apply_defaults()
             self.status_bar.showMessage("参数已重置为默认值")
 
+    def _on_toggle_params_lock(self) -> None:
+        """切换参数只读锁定状态"""
+        locked = self.chk_lock_params.isChecked()
+
+        # 从“锁定”切换到“解锁”时，增加二次确认，防止误触
+        if not locked and self._params_dirty:
+            reply = QMessageBox.question(
+                self,
+                "确认解锁参数",
+                "检测到参数内容已改动。\n是否确认解锁并允许继续编辑参数？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                self.chk_lock_params.blockSignals(True)
+                self.chk_lock_params.setChecked(True)
+                self.chk_lock_params.blockSignals(False)
+                self._set_params_locked(True)
+                self.status_bar.showMessage("已保持参数锁定")
+                return
+
+        self._set_params_locked(locked)
+        if locked:
+            self.status_bar.showMessage("参数已锁定（只读）")
+        else:
+            self.status_bar.showMessage("参数已解锁，可编辑")
+
+    def _mark_params_dirty(self, *_args) -> None:
+        """标记参数已被改动。"""
+        self._params_dirty = True
+
+    def _bind_params_dirty_tracking(self) -> None:
+        """绑定参数区控件改动信号，用于控制解锁确认弹窗。"""
+        for line_edit in (
+            self.db_host,
+            self.db_user,
+            self.db_password,
+            self.pt_slave_lag,
+            self.pt_max_load,
+            self.pt_critical_load,
+            self.pt_chunk_index,
+            self.pt_new_table_name,
+            self.extra_args,
+        ):
+            line_edit.textChanged.connect(self._mark_params_dirty)
+
+        for combo in (self.db_charset, self.pt_recursion):
+            combo.currentTextChanged.connect(self._mark_params_dirty)
+
+        for spin in (
+            self.db_port,
+            self.pt_max_lag,
+            self.pt_check_interval,
+            self.pt_chunk_size,
+        ):
+            spin.valueChanged.connect(self._mark_params_dirty)
+
+        for check in (
+            self.chk_no_replication_filters,
+            self.chk_no_check_alter,
+            self.chk_print,
+            self.chk_drop_old_table,
+            self.chk_drop_triggers,
+            self.radio_askpass,
+            self.radio_password,
+            self.radio_execute,
+            self.radio_dryrun,
+        ):
+            check.toggled.connect(self._mark_params_dirty)
+
     # ─────────────────────────────────────────────────────────────────
     # 参数收集与默认值
     # ─────────────────────────────────────────────────────────────────
+
+    def _set_params_locked(self, locked: bool) -> None:
+        """统一控制参数区域是否允许编辑。"""
+        editable = not locked
+        self.grp_db.setEnabled(editable)
+        self.grp_pt.setEnabled(editable)
+        self.grp_flags.setEnabled(editable)
+        self.grp_extra.setEnabled(editable)
+        self.btn_reset.setEnabled(editable)
 
     def _collect_config(self) -> PTConfig:
         """从 UI 控件收集参数，构建 PTConfig"""
@@ -589,6 +683,7 @@ class MainWindow(QMainWindow):
         s.setValue("flags/execute",                self.radio_execute.isChecked())
 
         s.setValue("extra/args", self.extra_args.text())
+        s.setValue("ui/params_locked", self.chk_lock_params.isChecked())
 
         # 窗口几何
         s.setValue("window/geometry", self.saveGeometry())
@@ -645,6 +740,11 @@ class MainWindow(QMainWindow):
         self.radio_dryrun.setChecked(not execute)
 
         self.extra_args.setText(s.value("extra/args", ""))
+        params_locked = s.value("ui/params_locked", False, type=bool)
+        self.chk_lock_params.blockSignals(True)
+        self.chk_lock_params.setChecked(params_locked)
+        self.chk_lock_params.blockSignals(False)
+        self._set_params_locked(params_locked)
 
         # 恢复窗口几何
         geom = s.value("window/geometry")

@@ -9,7 +9,9 @@
 - 支持执行模式切换：`--execute` / `--dry-run`
 - 支持复制生成命令到剪贴板
 - 自动记忆上次输入参数（`QSettings`）
+- 支持“参数只读锁定”总开关，防止误改配置
 - 内置深色主题与中文参数说明
+- 主窗体支持应用图标（`Resources/favicon.ico`）
 
 ## 项目结构
 
@@ -22,6 +24,9 @@ DDL2PT/
 │  ├─ main_window.py        # 主界面
 │  ├─ style.py              # QSS 样式
 │  └─ icons/                # 运行时图标资源（按钮/箭头）
+├─ Resources/
+│  ├─ favicon.ico           # 主窗体图标 / 打包回退图标
+│  └─ icon-512.png          # 打包优先图标源（推荐高分辨率）
 ├─ build_nuitka.py          # Nuitka 打包脚本
 └─ pyproject.toml
 ```
@@ -59,8 +64,9 @@ python main.py
 
 1. 在顶部输入 `ALTER TABLE` 语句。
 2. 配置数据库连接和 `pt-online-schema-change` 参数。
-3. 点击“转换”生成命令。
-4. 点击“复制命令”复制到剪贴板。
+3. 可勾选“参数只读锁定”避免误改。
+4. 点击“转换”生成命令。
+5. 点击“复制命令”复制到剪贴板。
 
 ## 支持的 SQL 格式
 
@@ -78,6 +84,7 @@ ALTER TABLE table_name MODIFY status TINYINT NOT NULL DEFAULT 0;
 - 默认启用 `--no-check-replication-filters`
 - 默认启用 `--print`
 - 默认执行模式为 `--execute`
+- 参数锁定状态下，仅当参数内容已改动时，解锁才会弹出二次确认提示
 
 ## 打包（Nuitka）
 
@@ -106,6 +113,8 @@ python build_nuitka.py
 - 输出目录默认在 `build/`
 - 默认将 dist 重命名为：`DDL2PT_v<version>`
 - 可执行文件名默认：`DDL2PT.exe`
+- Windows 图标优先使用 `Resources/icon-512.png`，自动转换为 ICO 后写入 exe
+- 若 PNG 处理失败，自动回退 `Resources/favicon.ico`
 
 ## 可配置项（打包）
 
@@ -117,6 +126,9 @@ python build_nuitka.py
 - `product_version`
 - `file_description`
 - `copyright`
+- `resources_dir`
+- `windows_icon_png`
+- `windows_icon_ico`
 - `executable_name`
 - `dist_folder_name`
 - `data_dirs`
@@ -129,11 +141,15 @@ python build_nuitka.py
 
 请确认打包输出中包含 `ui/icons` 目录（脚本默认已复制）。
 
-### 2) 提示无法解析 ALTER TABLE 语句
+### 2) exe 图标发糊
+
+请优先使用高分辨率正方形 PNG（建议至少 `256x256`，推荐 `512x512`），并放在 `Resources/` 中作为 `windows_icon_png` 配置项。
+
+### 3) 提示无法解析 ALTER TABLE 语句
 
 请检查 SQL 是否为标准 `ALTER TABLE ...` 形式，且表名/库名没有非常规语法。
 
-### 3) 命令能生成但执行失败
+### 4) 命令能生成但执行失败
 
 这是数据库环境问题（权限、主从状态、pt-osc 可执行路径等），请在目标环境单独排查。
 
